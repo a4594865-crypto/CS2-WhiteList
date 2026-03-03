@@ -21,12 +21,14 @@ public partial class WhiteList
     }
     Config = config;
   }
-
 }
+
 public class Config : BasePluginConfig
 {
+  // 1. 將預設值改為 false，確保伺服器重開時插件是關閉狀態
   [JsonPropertyName("Enabled")]
-  public bool Enabled { get; set; } = true;
+  public bool Enabled { get; set; } = false;
+
   public override int Version { get; set; } = 3;
   [JsonPropertyName("UsePrivateFeature")]
   public bool UsePrivateFeature { get; set; } = false;
@@ -47,6 +49,7 @@ public class Config : BasePluginConfig
   [JsonPropertyName("ServerID")]
   public int ServerID { get; set; } = 1;
 }
+
 public class Database
 {
   [JsonPropertyName("Host")]
@@ -62,6 +65,7 @@ public class Database
   [JsonPropertyName("Prefix")]
   public string Prefix { get; set; } = "whitelist";
 }
+
 public class Commands
 {
   [JsonPropertyName("Add")]
@@ -75,12 +79,18 @@ public class Commands
   [JsonPropertyName("ImmunityPermission")]
   public string ImmunityPermission { get; set; } = "@css/root";
 
+  // 2. 新增切換指令名稱與其執行權限的設定項
+  [JsonPropertyName("Toggle")]
+  public string Toggle { get; set; } = "whitelist";
+  
+  [JsonPropertyName("TogglePermission")]
+  public string TogglePermission { get; set; } = "@css/root";
 }
+
 public class SteamGroup
 {
   [JsonPropertyName("CheckIfMemberIsInGroup")]
   public bool CheckIfMemberIsInGroup { get; set; } = false;
   [JsonPropertyName("Apikey")]
   public string Apikey { get; set; } = "";
-
 }
