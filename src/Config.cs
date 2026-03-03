@@ -72,6 +72,8 @@ public class Commands
   public string Remove { get; set; } = "wlremove";
   [JsonPropertyName("RemovePermission")]
   public string RemovePermission { get; set; } = "@css/root";
+  [JsonPropertyName("ImmunityPermission")]
+  public string ImmunityPermission { get; set; } = "@css/root";
 
 }
 public class SteamGroup
