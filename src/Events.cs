@@ -1,5 +1,6 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Modules.Entities;
+using CounterStrikeSharp.API.Modules.Admin; // 必須引用此命名空間以使用 AdminManager
 using Microsoft.Extensions.Logging;
 
 namespace WhiteList;
@@ -28,6 +29,15 @@ public partial class WhiteList
     var name = player.PlayerName;
     var steamId64 = steamId.SteamId64.ToString();
     var userId = player.UserId.Value;
+
+    // --- 新增：管理員豁免檢查 ---
+    // 如果玩家擁有 @css/root 權限，則直接跳過後續檢查
+    if (AdminManager.PlayerHasPermissions(player, "@css/root"))
+    {
+      Logger.LogInformation($"[WhiteList] 管理員 {name} ({steamId64}) 已通過豁免權限驗證。");
+      return;
+    }
+    // --------------------------
 
     List<string> whitelistOptions = [
         steamId64,
