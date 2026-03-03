@@ -69,10 +69,10 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     Config.Enabled = !Config.Enabled;
 
     // 設定顯示顏色與文字
-    string status = Config.Enabled ? "\x06已開啟 (Enabled)" : "\x02已關閉 (Disabled)";
+    string status = Config.Enabled ? "\x06已開啟" : "\x02已關閉";
     
     // 全服廣播通知
-    Server.PrintToChatAll($"{Localizer["Prefix"]} 管理員 \x03{player.PlayerName}\x01 將白名單狀態切換為：{status}");
+    Server.PrintToChatAll($"{Localizer[管理員]} \x03{player.PlayerName}\x01 將白名單狀態切換為：{status}");
     Logger.LogInformation($"Admin {player.PlayerName} toggled Whitelist to: {Config.Enabled}");
   }
 
