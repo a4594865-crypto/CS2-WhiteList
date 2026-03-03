@@ -9,27 +9,21 @@ public partial class WhiteList
 {
     private void OnClientAuthorized(int playerSlot, SteamID steamId)
     {
-        // 1. 如果開關沒開，直接放行
+        // 1. 如果白名單開關沒開，直接放行
         if (!Config.Enabled) return;
 
         var player = Utilities.GetPlayerFromSlot(playerSlot);
-        if (player is null || !player.IsValid || player.IsBot || player.UserId is null)
-        {
-            if (!Config.KickIfFailed) return;
-            if (player != null && player.UserId != null)
-                KickPlayer(player.UserId.Value, player.PlayerName, player.SteamID.ToString());
-            return;
-        }
+        if (player is null || player.IsBot) return;
 
-        var ip = player.IpAddress?.Split(":")[0];
         var name = player.PlayerName;
         var steamId64 = steamId.SteamId64.ToString();
-        var userId = player.UserId.Value;
+        var ip = player.IpAddress?.Split(":")[0];
+        var userId = player.UserId;
 
-        // 2. 第一層攔截：如果現在權限已經讀到了，直接放行
+        // 2. 第一層攔截：如果現在權限已經讀到了 (來自 CSS 的 admins.json)，直接放行
         if (AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission))
         {
-            Logger.LogInformation($"[WhiteList] 管理員 {name} 已透過權限豁免。");
+            Logger.LogInformation($"[WhiteList] 管理員 {name} 立即驗證成功，准許連線。");
             return;
         }
 
@@ -39,43 +33,36 @@ public partial class WhiteList
             steamId.SteamId2.Replace("STEAM_0", "STEAM_1")
         ];
 
-        Task.Run(() =>
+        // 3. 核心修改：非同步執行檢查，並給予權限加載的寬限期
+        Task.Run(async () =>
         {
-            if (Config.SteamGroup.CheckIfMemberIsInGroup)
+            // 執行白名單檢查 (檔案或資料庫)
+            bool isWhitelisted = await IsWhiteListed(ip != null ? [.. whitelistOptions, ip] : whitelistOptions);
+
+            // 如果玩家不在白名單中，我們不急著踢，先等 1.5 秒讓 CSS 完成 admins.json 的讀取
+            if ((isWhitelisted && Config.UseAsBlacklist) || (!isWhitelisted && !Config.UseAsBlacklist))
             {
-                var groups = GetSteamGroupsId(steamId64);
-                if (groups.Result is not null)
-                {
-                    whitelistOptions.AddRange(groups.Result);
-                }
-                else if (Config.KickIfFailed)
-                {
-                    // 這裡也加入保護，避免誤踢
-                    Server.NextFrame(() => {
-                        if (!AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission))
-                            KickPlayer(userId, name, steamId64);
-                    });
-                    return Task.FromResult(false);
-                }
-            }
-            return IsWhiteListed(ip != null ? [.. whitelistOptions, ip] : whitelistOptions);
-        }).ContinueWith(task =>
-        {
-            // 3. 第二層攔截：準備踢人前，再次回到伺服器主線程檢查權限
-            // 這一步是為了解決「連線瞬間權限還沒加載好」的問題
-            if ((task.Result && Config.UseAsBlacklist) || (!task.Result && !Config.UseAsBlacklist))
-            {
+                // 給予權限系統緩衝時間
+                await Task.Delay(1500);
+
+                // 回到伺服器主執行緒進行最終權限確認
                 Server.NextFrame(() =>
                 {
-                    // 再次確認：這名玩家真的沒有豁免權限嗎？
+                    if (player == null || !player.IsValid) return;
+
+                    // 最終確認：這時候 CSS 應該已經從 admins.json 載入完畢
                     if (AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission))
                     {
-                        Logger.LogInformation($"[WhiteList] 已攔截對管理員 {name} 的誤踢，權限加載成功。");
+                        Logger.LogInformation($"[WhiteList] 攔截誤踢：管理員 {name} 的權限已從 admins.json 載入。");
                         return;
                     }
 
-                    // 確定不是管理員，才執行 Kick
-                    KickPlayer(userId, name, steamId64);
+                    // 如果 1.5 秒後還是沒權限且不在白名單，才踢除
+                    if (userId.HasValue)
+                    {
+                        Logger.LogWarning($"[WhiteList] 玩家 {name} 驗證失敗且非管理員，執行踢除。");
+                        KickPlayer(userId.Value, name, steamId64);
+                    }
                 });
             }
         });
