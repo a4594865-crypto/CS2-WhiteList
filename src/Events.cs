@@ -1,6 +1,6 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Modules.Entities;
-using CounterStrikeSharp.API.Modules.Admin; // 必須引用此命名空間以使用 AdminManager
+using CounterStrikeSharp.API.Modules.Admin;
 using Microsoft.Extensions.Logging;
 
 namespace WhiteList;
@@ -14,14 +14,11 @@ public partial class WhiteList
     var player = Utilities.GetPlayerFromSlot(playerSlot);
     if (player is null || !player.IsValid || player.IsBot || player.UserId is null)
     {
-      if (!Config.KickIfFailed)
-        return;
-
+      if (!Config.KickIfFailed) return;
       if (player != null && player.UserId != null)
         KickPlayer(player.UserId.Value, player.PlayerName, player.SteamID.ToString());
       else
         Logger.LogInformation("Can't kick player");
-
       return;
     }
 
@@ -30,19 +27,16 @@ public partial class WhiteList
     var steamId64 = steamId.SteamId64.ToString();
     var userId = player.UserId.Value;
 
-    // --- 新增：管理員豁免檢查 ---
-    // 如果玩家擁有 @css/root 權限，則直接跳過後續檢查
-    if (AdminManager.PlayerHasPermissions(player, "@css/root"))
+    if (AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission))
     {
-      Logger.LogInformation($"[WhiteList] 管理員 {name} ({steamId64}) 已通過豁免權限驗證。");
+      Logger.LogInformation($"[WhiteList] Admin {name} ({steamId64}) bypassed verification.");
       return;
     }
-    // --------------------------
 
     List<string> whitelistOptions = [
         steamId64,
-            steamId.SteamId3,
-            steamId.SteamId2.Replace("STEAM_0", "STEAM_1")
+        steamId.SteamId3,
+        steamId.SteamId2.Replace("STEAM_0", "STEAM_1")
     ];
 
     Task.Run(() =>
@@ -60,7 +54,6 @@ public partial class WhiteList
           return Task.FromResult(false);
         }
       }
-
       return IsWhiteListed(ip != null ? [.. whitelistOptions, ip] : whitelistOptions);
     }).ContinueWith(task =>
     {
