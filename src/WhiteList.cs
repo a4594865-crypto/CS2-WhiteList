@@ -1,5 +1,8 @@
-﻿using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API;
+using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
+using CounterStrikeSharp.API.Modules.Admin;
+using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Cvars;
 using Microsoft.Extensions.Logging;
 using static CounterStrikeSharp.API.Core.Listeners;
@@ -15,7 +18,6 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
   public static int ConfigVersion => 3;
   public string[] WhiteListValues = [];
 
-
   public override void Load(bool hotReload)
   {
     if (Config.UsePrivateFeature)
@@ -25,29 +27,19 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         Config.Enabled = Convar_isPluginEnabled.Value;
         Config.UseAsBlacklist = Convar_useAsBlacklist.Value;
       }
-      Convar_isPluginEnabled.ValueChanged += (_, value) =>
-      {
-        Config.Enabled = value;
-      };
-      if (!Config.Enabled)
-      {
-        Logger.LogWarning("This plugin is disabled");
-        return;
-      }
-      Convar_useAsBlacklist.ValueChanged += (_, value) =>
-      {
-        Config.UseAsBlacklist = value;
-      };
+      Convar_isPluginEnabled.ValueChanged += (_, value) => { Config.Enabled = value; };
+      Convar_useAsBlacklist.ValueChanged += (_, value) => { Config.UseAsBlacklist = value; };
     }
 
     RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
-
-    AddCommand($"css_{Config.Commands.Add}", "Set Admin", Add);
-    AddCommand($"css_{Config.Commands.Remove}", "Remove Admin", Remove);
+    // 註冊指令
+    AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
+    AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
+    // 新增：註冊切換開關指令
+    AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
 
     CheckVersion();
-
 
     if (Config.UseDatabase)
     {
@@ -60,7 +52,30 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     }
   }
 
+  // 新增：處理白名單開關切換的方法
+  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+  public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
+  {
+    if (player == null) return;
+
+    // 檢查執行者是否有權限 (預設為 @css/root)
+    if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+    {
+      command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
+      return;
+    }
+
+    // 執行切換
+    Config.Enabled = !Config.Enabled;
+
+    // 設定顯示顏色與文字
+    string status = Config.Enabled ? "\x06已開啟 (Enabled)" : "\x02已關閉 (Disabled)";
+    
+    // 全服廣播通知
+    Server.PrintToChatAll($"{Localizer["Prefix"]} 管理員 \x03{player.PlayerName}\x01 將白名單狀態切換為：{status}");
+    Logger.LogInformation($"Admin {player.PlayerName} toggled Whitelist to: {Config.Enabled}");
+  }
+
   public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
   public FakeConVar<bool> Convar_useAsBlacklist = new("plugin_whitelist_useasblacklist", "Use as blacklist", false);
-
 }
