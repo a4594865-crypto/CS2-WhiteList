@@ -14,7 +14,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     public override string ModuleName => "WhiteList";
     public override string ModuleDescription => "Allow or block players from a list on database or file";
     public override string ModuleAuthor => "1MaaaaaacK";
-    public override string ModuleVersion => "1.0.3";
+    public override string ModuleVersion => "1.0.4"; // 建議微調版本號
     public static int ConfigVersion => 3;
     public string[] WhiteListValues = [];
 
@@ -31,19 +31,13 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
             Convar_useAsBlacklist.ValueChanged += (_, value) => { Config.UseAsBlacklist = value; };
         }
 
+        // 註冊監聽器
         RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
         // 註冊指令
         AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
         AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
-        
-        // 額外註冊一個給控制台用的指令
-        AddCommand("css_whitelist", "Toggle Whitelist", ToggleWhitelist);
-        
-        if (Config.Commands.Toggle != "whitelist")
-        {
-            AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist Custom", ToggleWhitelist);
-        }
+        AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
 
         CheckVersion();
 
@@ -54,55 +48,73 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         }
         else
         {
-            // 執行下方唯一的 CheckFile 方法
             CheckFile();
         }
     }
 
-    // 解決空格問題的關鍵：徹底清洗 ID 數據
+    // 核心修正：強健的檔案讀取邏輯
     public void CheckFile()
     {
         string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
 
         if (!File.Exists(filePath))
         {
-            File.Create(filePath).Close();
-            Logger.LogWarning("[WhiteList] 找不到 whitelist.txt，已自動建立新檔案。");
+            File.Create(filePath).Dispose();
+            Logger.LogInformation("[WhiteList] 找不到 whitelist.txt，已自動建立空白檔案。");
             return;
         }
 
-        // 1. ReadAllLines 讀取所有行
-        // 2. Select(x => x.Trim()) 徹底洗掉每行前後的隱形空格與 \r 換行符號
-        // 3. Where 濾掉沒內容的空行
-        WhiteListValues = File.ReadAllLines(filePath)
-            .Select(x => x.Trim())
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .ToArray();
+        try
+        {
+            // 修正點：Trim() 移除 \r 換行符，Where 過濾掉空白行與非數字內容
+            WhiteListValues = File.ReadAllLines(filePath)
+                .Select(line => line.Trim())
+                .Where(line => !string.IsNullOrWhiteSpace(line) && line.All(char.IsDigit))
+                .ToArray();
 
-        Logger.LogInformation($"[WhiteList] 讀取成功！名單內共有 {WhiteListValues.Length} 個有效的 ID。");
+            Logger.LogInformation($"[WhiteList] 成功從檔案載入 {WhiteListValues.Length} 個 ID。");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"[WhiteList] 讀取檔案時發生錯誤: {ex.Message}");
+        }
     }
 
-    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
+    // 玩家連線時的驗證邏輯
+    public void OnClientAuthorized(int playerSlot, SteamID steamId)
+    {
+        if (!Config.Enabled) return;
+
+        string playerSteamId64 = steamId.SteamId64.ToString();
+        
+        // 檢查該 ID 是否在清單中
+        bool isInList = WhiteListValues.Contains(playerSteamId64);
+
+        // 邏輯：白名單模式且不在名單內 -> 踢出
+        // 或是：黑名單模式且在名單內 -> 踢出
+        if ((!Config.UseAsBlacklist && !isInList) || (Config.UseAsBlacklist && isInList))
+        {
+            Logger.LogInformation($"[WhiteList] 拒絕玩家連線: {playerSteamId64} (原因: 不在白名單或在黑名單中)");
+            Server.ExecuteCommand($"kickid {playerSlot} \"{Localizer["KickReason"]}\"");
+        }
+    }
+
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
     {
-        if (player != null && !AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+        if (player == null) return;
+
+        if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
         {
             command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
             return;
         }
 
-        [cite_start]// 修改 ConVar 值，讓 Load 裡的監聽器去改 Config.Enabled，避免死循環 
-        Convar_isPluginEnabled.Value = !Convar_isPluginEnabled.Value;
-
-        bool finalStatus = Convar_isPluginEnabled.Value;
-        string status = finalStatus ? "\x06開啟" : "\x02關閉";
-        string textStatus = finalStatus ? "開啟" : "關閉";
+        Config.Enabled = !Config.Enabled;
+        string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
         
-        command.ReplyToCommand($" [WhiteList] 功能已設定為：{textStatus}");
-
-        string executor = player == null ? "伺服器控制台" : player.PlayerName;
-        Server.PrintToChatAll($"\x01[\x0B 管理員 \x01] \x03{executor}\x01 將白名單設定：{status}");
-        Logger.LogInformation($"{executor} toggled Whitelist to: {finalStatus}");
+        Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{player.PlayerName}\x01 將白名單設定：{status}");
+        Logger.LogInformation($"Admin {player.PlayerName} toggled Whitelist to: {Config.Enabled}");
     }
 
     public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
