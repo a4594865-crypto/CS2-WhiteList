@@ -7,7 +7,6 @@ namespace WhiteList;
 
 public partial class WhiteList
 {
-    // 此方法為 private，且全專案僅此一個實作，不會造成重複定義錯誤
     private void OnClientAuthorized(int playerSlot, SteamID steamId)
     {
         if (!Config.Enabled) return;
@@ -22,7 +21,7 @@ public partial class WhiteList
 
         if (AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission))
         {
-            Logger.LogInformation($"[WhiteList] 管理員 {name} 立即驗證成功，准許連線。");
+            Logger.LogInformation($"[WhiteList] 管理員 {name} 立即驗證成功。");
             return;
         }
 
@@ -34,7 +33,6 @@ public partial class WhiteList
 
         Task.Run(async () =>
         {
-            [cite_start]// 這裡會去檢查 WhiteListValues (由 WhiteList.cs 讀取) 
             bool isWhitelisted = await IsWhiteListed(ip != null ? [.. whitelistOptions, ip] : whitelistOptions);
 
             if ((isWhitelisted && Config.UseAsBlacklist) || (!isWhitelisted && !Config.UseAsBlacklist))
@@ -45,11 +43,7 @@ public partial class WhiteList
                 {
                     if (player == null || !player.IsValid) return;
 
-                    if (AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission))
-                    {
-                        Logger.LogInformation($"[WhiteList] 攔截誤踢：管理員 {name} 的權限已載入。");
-                        return;
-                    }
+                    if (AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission)) return;
 
                     if (userId.HasValue)
                     {
