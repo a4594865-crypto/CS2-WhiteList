@@ -33,11 +33,12 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
 
     RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
-    // 註冊指令
     AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
     AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
-    // 新增：註冊切換開關指令
-    AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
+    
+    // 註冊指令，並支援控制台執行 (CLIENT_AND_SERVER)
+    AddCommand("css_whitelist", "Toggle Whitelist", ToggleWhitelist);
+    AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist Custom", ToggleWhitelist);
 
     CheckVersion();
 
@@ -48,32 +49,55 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     }
     else
     {
+      // 執行強化版的讀取邏輯
       CheckFile();
     }
   }
 
-  // 新增：處理白名單開關切換的方法
-  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+  // 強化版 CheckFile：徹底解決 \r 和空行問題
+  public void CheckFile()
+  {
+    string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
+
+    if (!File.Exists(filePath))
+    {
+      File.Create(filePath).Close();
+      Logger.LogWarning("[WhiteList] 找不到 whitelist.txt，已自動建立新檔案。");
+      return;
+    }
+
+    // 1. 讀取所有行
+    // 2. Select(x => x.Trim())：刪除每一行前後的空格、\r、\n
+    // 3. Where(x => !string.IsNullOrWhiteSpace(x))：刪除純空格行或空行
+    WhiteListValues = File.ReadAllLines(filePath)
+      .Select(x => x.Trim())
+      .Where(x => !string.IsNullOrWhiteSpace(x))
+      .ToArray();
+
+    Logger.LogInformation($"[WhiteList] 檔案讀取成功！目前名單內共有 {WhiteListValues.Length} 個有效的 ID。");
+  }
+
+  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
   public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
   {
-    if (player == null) return;
-
-    // 檢查執行者是否有權限 (預設為 @css/root)
-    if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+    if (player != null && !AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
     {
       command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
       return;
     }
 
-    // 執行切換
-    Config.Enabled = !Config.Enabled;
+    // 只改 ConVar，讓監聽器去改 Config.Enabled，避免開了又關
+    Convar_isPluginEnabled.Value = !Convar_isPluginEnabled.Value;
 
-    // 設定顯示顏色與文字
-    string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
+    bool finalStatus = Convar_isPluginEnabled.Value;
+    string status = finalStatus ? "\x06開啟" : "\x02關閉";
+    string textStatus = finalStatus ? "開啟" : "關閉";
     
-    // 全服廣播通知
-    Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{player.PlayerName}\x01 將白名單設定：{status}");
-    Logger.LogInformation($"Admin {player.PlayerName} toggled Whitelist to: {Config.Enabled}");
+    command.ReplyToCommand($" [WhiteList] 功能已設定為：{textStatus}");
+
+    string executor = player == null ? "伺服器控制台" : player.PlayerName;
+    Server.PrintToChatAll($"\x01[\x0B 管理員 \x01] \x03{executor}\x01 將白名單設定：{status}");
+    Logger.LogInformation($"{executor} toggled Whitelist to: {finalStatus}");
   }
 
   public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
