@@ -11,16 +11,35 @@ namespace WhiteList;
 
 public partial class WhiteList : BasePlugin, IPluginConfig<Config>
 {
-    // ... 模組定義 (ModuleName, Version 等) 保持不變 ...
+    public override string ModuleName => "WhiteList";
+    public override string ModuleDescription => "Allow or block players from a list on database or file";
+    public override string ModuleAuthor => "1MaaaaaacK";
+    public override string ModuleVersion => "1.0.4";
+    public static int ConfigVersion => 3;
+    public string[] WhiteListValues = [];
 
     public override void Load(bool hotReload)
     {
-        // ... Load 邏輯保持不變 ...
+        if (Config.UsePrivateFeature)
+        {
+            if (hotReload)
+            {
+                Config.Enabled = Convar_isPluginEnabled.Value;
+                Config.UseAsBlacklist = Convar_useAsBlacklist.Value;
+            }
+            Convar_isPluginEnabled.ValueChanged += (_, value) => { Config.Enabled = value; };
+            Convar_useAsBlacklist.ValueChanged += (_, value) => { Config.UseAsBlacklist = value; };
+        }
 
-        // 這裡註冊監聽器，具體實作請保留在 Events.cs 中
+        [cite_start]// 註冊監聽器，實作邏輯位於 Events.cs 
         RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
-        // ... 指令註冊 ...
+        [cite_start]// 註冊指令 
+        AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
+        AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
+        AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
+
+        CheckVersion();
 
         if (Config.UseDatabase)
         {
@@ -33,7 +52,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         }
     }
 
-    // 唯一的 CheckFile 定義，請確保專案中沒有其他重複的 CheckFile
+    // 核心修正：處理多行讀取與 Windows 換行符號問題
     public void CheckFile()
     {
         string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
@@ -47,17 +66,35 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         try
         {
             // 使用 ReadAllLines 並透過 Select(line => line.Trim()) 清除 \r 字元
-            // 這能解決 whitelist.txt 第二行玩家無法進入的問題
+            // 同時過濾掉空白行與包含文字的行 (例如 )
             WhiteListValues = File.ReadAllLines(filePath)
                 .Select(line => line.Trim())
-                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Where(line => !string.IsNullOrWhiteSpace(line) && line.All(c => char.IsDigit(c)))
                 .ToArray();
 
-            Logger.LogInformation($"[WhiteList] 成功載入 {WhiteListValues.Length} 個 ID");
+            Logger.LogInformation($"[WhiteList] 成功載入 {WhiteListValues.Length} 個 SteamID 項目。");
         }
         catch (Exception ex)
         {
-            Logger.LogError($"[WhiteList] 讀取失敗: {ex.Message}");
+            Logger.LogError($"[WhiteList] 檔案讀取失敗: {ex.Message}");
         }
     }
+
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
+    {
+        if (player == null) return;
+        if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+        {
+            command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
+            return;
+        }
+
+        Config.Enabled = !Config.Enabled;
+        string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
+        Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{player.PlayerName}\x01 將白名單設定：{status}");
+    }
+
+    public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
+    public FakeConVar<bool> Convar_useAsBlacklist = new("plugin_whitelist_useasblacklist", "Use as blacklist", false);
 }
