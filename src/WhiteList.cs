@@ -4,7 +4,6 @@ using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Cvars;
-using CounterStrikeSharp.API.Modules.Entities; // 修正：新增此行以支援 SteamID
 using Microsoft.Extensions.Logging;
 using static CounterStrikeSharp.API.Core.Listeners;
 
@@ -15,7 +14,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     public override string ModuleName => "WhiteList";
     public override string ModuleDescription => "Allow or block players from a list on database or file";
     public override string ModuleAuthor => "1MaaaaaacK";
-    public override string ModuleVersion => "1.0.5";
+    public override string ModuleVersion => "1.0.4";
     public static int ConfigVersion => 3;
     public string[] WhiteListValues = [];
 
@@ -32,10 +31,9 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
             Convar_useAsBlacklist.ValueChanged += (_, value) => { Config.UseAsBlacklist = value; };
         }
 
-        // 註冊玩家授權監聽器
+        // 這裡只需要註冊，邏輯寫在 Events.cs
         RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
-        // 註冊指令
         AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
         AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
         AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
@@ -53,12 +51,39 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         }
     }
 
-    // 處理白名單切換
+    // 核心修正：處理多行讀取與換行符問題
+    public void CheckFile()
+    {
+        string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
+
+        if (!File.Exists(filePath))
+        {
+            File.Create(filePath).Dispose();
+            return;
+        }
+
+        try
+        {
+            // 1. 使用 ReadAllLines 拆分每一行
+            // 2. Trim() 移除 \r 換行符（這是第二行失敗的主因）
+            // 3. Where 過濾空白與非數字行
+            WhiteListValues = File.ReadAllLines(filePath)
+                .Select(line => line.Trim())
+                .Where(line => !string.IsNullOrWhiteSpace(line) && line.All(c => char.IsDigit(c) || c == 'S' || c == 'T' || c == 'E' || c == 'A' || c == 'M' || c == '_' || c == ':'))
+                .ToArray();
+
+            Logger.LogInformation($"[WhiteList] 成功載入 {WhiteListValues.Length} 個白名單項目。");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"[WhiteList] 檔案讀取失敗: {ex.Message}");
+        }
+    }
+
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null) return;
-
         if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
         {
             command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
@@ -67,54 +92,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
 
         Config.Enabled = !Config.Enabled;
         string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
-        
         Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{player.PlayerName}\x01 將白名單設定：{status}");
-        Logger.LogInformation($"Admin {player.PlayerName} toggled Whitelist to: {Config.Enabled}");
-    }
-
-    // 修正：確保 CheckFile 只有這一個定義，避免重複定義錯誤
-    public void CheckFile()
-    {
-        string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
-
-        if (!File.Exists(filePath))
-        {
-            File.Create(filePath).Dispose();
-            Logger.LogInformation("[WhiteList] 建立新的 whitelist.txt 檔案。");
-            return;
-        }
-
-        try
-        {
-            // 讀取並清理每一行，確保沒有 \r 或多餘空格，且過濾非數字行
-            WhiteListValues = File.ReadAllLines(filePath)
-                .Select(line => line.Trim())
-                .Where(line => !string.IsNullOrWhiteSpace(line) && line.All(char.IsDigit))
-                .ToArray();
-
-            Logger.LogInformation($"[WhiteList] 成功載入 {WhiteListValues.Length} 個 SteamID。");
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError($"[WhiteList] 讀取檔案失敗: {ex.Message}");
-        }
-    }
-
-    // 玩家驗證邏輯
-    public void OnClientAuthorized(int playerSlot, SteamID steamId)
-    {
-        if (!Config.Enabled) return;
-
-        string playerSteamId64 = steamId.SteamId64.ToString();
-        bool isInList = WhiteListValues.Contains(playerSteamId64);
-
-        // 判斷是否需要踢出 (白名單模式下不在名單中，或黑名單模式下在名單中)
-        if ((!Config.UseAsBlacklist && !isInList) || (Config.UseAsBlacklist && isInList))
-        {
-            Logger.LogInformation($"[WhiteList] 踢出玩家: {playerSteamId64} (Slot: {playerSlot})");
-            // 注意：請確保翻譯檔中有 KickReason，或直接改為字串
-            Server.ExecuteCommand($"kickid {playerSlot} \"{Localizer["KickReason"]}\"");
-        }
     }
 
     public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
