@@ -27,14 +27,20 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         Config.Enabled = Convar_isPluginEnabled.Value;
         Config.UseAsBlacklist = Convar_useAsBlacklist.Value;
       }
+      // 這裡的監聽器會負責處理所有的開關邏輯
       Convar_isPluginEnabled.ValueChanged += (_, value) => { Config.Enabled = value; };
       Convar_useAsBlacklist.ValueChanged += (_, value) => { Config.UseAsBlacklist = value; };
     }
 
     RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
-    AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist (Custom)", ToggleWhitelist);
-    AddCommand("css_whitelist", "Toggle Whitelist (Global/Console)", ToggleWhitelist);
+    // 建議：檢查 config.json 裡的 Toggle 是否也叫 whitelist，如果是，請註冊一個就好
+    if (Config.Commands.Toggle != "whitelist")
+    {
+        AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist (Custom)", ToggleWhitelist);
+    }
+    AddCommand("css_whitelist", "Toggle Whitelist (Console)", ToggleWhitelist);
+    
     AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
     AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
 
@@ -60,26 +66,20 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
       return;
     }
 
-    // --- 關鍵修正啟動 ---
-    
-    // 1. 執行切換
-    Config.Enabled = !Config.Enabled;
-    
-    // 2. 同步更新 FakeConVar 的數值，避免指令與環境變數衝突
-    Convar_isPluginEnabled.Value = Config.Enabled;
+    // 關鍵修正：只改 ConVar 的值，讓 ValueChanged 監聽器去改 Config.Enabled
+    Convar_isPluginEnabled.Value = !Convar_isPluginEnabled.Value;
 
-    // 3. 根據切換後的結果來決定文字
-    string statusText = Config.Enabled ? "開啟" : "關閉";
-    string colorStatus = Config.Enabled ? "\x06開啟" : "\x02關閉";
-    
-    // --- 關鍵修正結束 ---
+    // 抓取修改後的最新狀態
+    bool newState = Convar_isPluginEnabled.Value;
+    string statusText = newState ? "開啟" : "關閉";
+    string colorStatus = newState ? "\x06開啟" : "\x02關閉";
 
-    command.ReplyToCommand($" [WhiteList] 功能已切換為：{statusText}");
+    command.ReplyToCommand($" [WhiteList] 功能已成功切換為：{statusText}");
 
     string executor = player == null ? "伺服器控制台" : player.PlayerName;
     Server.PrintToChatAll($" \x01[\x0B 管理員 \x01] \x03{executor}\x01 將白名單設定：{colorStatus}");
     
-    Logger.LogInformation($"{executor} toggled Whitelist to: {Config.Enabled}");
+    Logger.LogInformation($"{executor} toggled Whitelist to: {newState}");
   }
 
   public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
