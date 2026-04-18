@@ -33,18 +33,11 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
 
     RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
-    // --- 註冊指令區塊 ---
-    
-    // 1. 保留原本從 config.json 讀取的自訂指令 (例如 !whitelist)
-    AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist (Custom)", ToggleWhitelist);
-
-    // 2. 額外新增一個專門給伺服器後台使用的固定指令
-    AddCommand("css_whitelist", "Toggle Whitelist (Global/Console)", ToggleWhitelist);
-
-    // -------------------
-
+    // 註冊指令
     AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
     AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
+    // 新增：註冊切換開關指令
+    AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
 
     CheckVersion();
 
@@ -59,33 +52,28 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     }
   }
 
-  // 修改：將 whoCanExecute 改為 CLIENT_AND_SERVER，讓黑視窗也能用
-  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
+  // 新增：處理白名單開關切換的方法
+  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
   public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
   {
-    // 如果是玩家執行 (player 不為 null)，則檢查權限
-    // 如果是伺服器控制台執行 (player 為 null)，則直接通過
-    if (player != null && !AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+    if (player == null) return;
+
+    // 檢查執行者是否有權限 (預設為 @css/root)
+    if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
     {
       command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
       return;
     }
 
-    // 執行切換邏輯
+    // 執行切換
     Config.Enabled = !Config.Enabled;
 
     // 設定顯示顏色與文字
-    string statusText = Config.Enabled ? "開啟" : "關閉";
-    string colorStatus = Config.Enabled ? "\x06開啟" : "\x02關閉";
+    string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
     
-    // 回應執行指令的人 (會顯示在控制台或玩家聊天室)
-    command.ReplyToCommand($" [WhiteList] 功能已切換為：{statusText}");
-
     // 全服廣播通知
-    string executor = player == null ? "伺服器控制台" : player.PlayerName;
-    Server.PrintToChatAll($" \x01[\x0B 管理員 \x01] \x03{executor}\x01 將白名單設定：{colorStatus}");
-    
-    Logger.LogInformation($"{executor} toggled Whitelist to: {Config.Enabled}");
+    Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{player.PlayerName}\x01 將白名單設定：{status}");
+    Logger.LogInformation($"Admin {player.PlayerName} toggled Whitelist to: {Config.Enabled}");
   }
 
   public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
