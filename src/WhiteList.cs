@@ -33,8 +33,11 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
 
         RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
+        // 註冊指令
         AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
         AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
+        
+        // 額外註冊一個給控制台用的指令
         AddCommand("css_whitelist", "Toggle Whitelist", ToggleWhitelist);
         
         if (Config.Commands.Toggle != "whitelist")
@@ -51,12 +54,12 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         }
         else
         {
-            // 這裡會呼叫下方唯一的一個 CheckFile 方法
+            // 執行下方唯一的 CheckFile 方法
             CheckFile();
         }
     }
 
-    // --- 關鍵：全專案只能有這一個 CheckFile，刪除其他地方的同名方法 ---
+    // 解決空格問題的關鍵：徹底清洗 ID 數據
     public void CheckFile()
     {
         string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
@@ -64,16 +67,19 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         if (!File.Exists(filePath))
         {
             File.Create(filePath).Close();
+            Logger.LogWarning("[WhiteList] 找不到 whitelist.txt，已自動建立新檔案。");
             return;
         }
 
-        // 徹底消除空格、換行符 (\r) 與 空行的絕招
+        // 1. ReadAllLines 讀取所有行
+        // 2. Select(x => x.Trim()) 徹底洗掉每行前後的隱形空格與 \r 換行符號
+        // 3. Where 濾掉沒內容的空行
         WhiteListValues = File.ReadAllLines(filePath)
-            .Select(x => x.Trim()) // 1. 把每一行前後的隱形空格和 \r 統統洗掉
-            .Where(x => !string.IsNullOrWhiteSpace(x)) // 2. 只有內容不是空的才留下來
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
             .ToArray();
 
-        Logger.LogInformation($"[WhiteList] 讀取完成，共有 {WhiteListValues.Length} 個 ID。");
+        Logger.LogInformation($"[WhiteList] 讀取成功！名單內共有 {WhiteListValues.Length} 個有效的 ID。");
     }
 
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
@@ -85,16 +91,18 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
             return;
         }
 
+        [cite_start]// 修改 ConVar 值，讓 Load 裡的監聽器去改 Config.Enabled，避免死循環 
         Convar_isPluginEnabled.Value = !Convar_isPluginEnabled.Value;
 
         bool finalStatus = Convar_isPluginEnabled.Value;
-        string statusText = finalStatus ? "開啟" : "關閉";
-        string colorStatus = finalStatus ? "\x06開啟" : "\x02關閉";
+        string status = finalStatus ? "\x06開啟" : "\x02關閉";
+        string textStatus = finalStatus ? "開啟" : "關閉";
         
-        command.ReplyToCommand($" [WhiteList] 設定已改為：{statusText}");
+        command.ReplyToCommand($" [WhiteList] 功能已設定為：{textStatus}");
 
         string executor = player == null ? "伺服器控制台" : player.PlayerName;
-        Server.PrintToChatAll($"\x01[\x0B 管理員 \x01] \x03{executor}\x01 將白名單設定：{colorStatus}");
+        Server.PrintToChatAll($"\x01[\x0B 管理員 \x01] \x03{executor}\x01 將白名單設定：{status}");
+        Logger.LogInformation($"{executor} toggled Whitelist to: {finalStatus}");
     }
 
     public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
