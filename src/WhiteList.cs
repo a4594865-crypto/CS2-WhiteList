@@ -31,7 +31,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
             Convar_useAsBlacklist.ValueChanged += (_, value) => { Config.UseAsBlacklist = value; };
         }
 
-        // 這裡只需要註冊，邏輯寫在 Events.cs
+        // 這裡註冊，具體實作在 Events.cs
         RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
         AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
@@ -51,7 +51,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         }
     }
 
-    // 核心修正：處理多行讀取與換行符問題
+    // 解決第二行失效的核心：使用 .Trim()
     public void CheckFile()
     {
         string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
@@ -64,19 +64,17 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
 
         try
         {
-            // 1. 使用 ReadAllLines 拆分每一行
-            // 2. Trim() 移除 \r 換行符（這是第二行失敗的主因）
-            // 3. Where 過濾空白與非數字行
+            // 使用 ReadAllLines 並透過 Trim() 去除隱形的 \r 換行符號
             WhiteListValues = File.ReadAllLines(filePath)
                 .Select(line => line.Trim())
-                .Where(line => !string.IsNullOrWhiteSpace(line) && line.All(c => char.IsDigit(c) || c == 'S' || c == 'T' || c == 'E' || c == 'A' || c == 'M' || c == '_' || c == ':'))
+                .Where(line => !string.IsNullOrWhiteSpace(line))
                 .ToArray();
 
-            Logger.LogInformation($"[WhiteList] 成功載入 {WhiteListValues.Length} 個白名單項目。");
+            Logger.LogInformation($"[WhiteList] 成功載入 {WhiteListValues.Length} 個 ID");
         }
         catch (Exception ex)
         {
-            Logger.LogError($"[WhiteList] 檔案讀取失敗: {ex.Message}");
+            Logger.LogError($"[WhiteList] 讀取失敗: {ex.Message}");
         }
     }
 
