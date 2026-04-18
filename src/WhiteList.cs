@@ -31,12 +31,12 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
       Convar_useAsBlacklist.ValueChanged += (_, value) => { Config.UseAsBlacklist = value; };
     }
 
+    // 註冊監聽器，實作邏輯位於 Events.cs
     RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
     // 註冊指令
     AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
     AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
-    // 新增：註冊切換開關指令
     AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
 
     CheckVersion();
@@ -48,6 +48,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     }
     else
     {
+      // 呼叫下方定義的 CheckFile 方法
       CheckFile();
     }
   }
@@ -58,22 +59,45 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
   {
     if (player == null) return;
 
-    // 檢查執行者是否有權限 (預設為 @css/root)
     if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
     {
       command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
       return;
     }
 
-    // 執行切換
     Config.Enabled = !Config.Enabled;
-
-    // 設定顯示顏色與文字
     string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
     
-    // 全服廣播通知
     Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{player.PlayerName}\x01 將白名單設定：{status}");
     Logger.LogInformation($"Admin {player.PlayerName} toggled Whitelist to: {Config.Enabled}");
+  }
+
+  // 核心修正：解決多行 ID 讀取失敗並補齊缺失的方法
+  public void CheckFile()
+  {
+    string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
+
+    if (!File.Exists(filePath))
+    {
+      File.Create(filePath).Dispose();
+      return;
+    }
+
+    try
+    {
+      // 讀取所有行並使用 Trim() 移除 \r 換行符號
+      // 這能解決 whitelist.txt 包含多行 ID 時的比對失敗問題
+      WhiteListValues = File.ReadAllLines(filePath)
+        .Select(line => line.Trim())
+        .Where(line => !string.IsNullOrWhiteSpace(line))
+        .ToArray();
+
+      Logger.LogInformation($"[WhiteList] 成功載入 {WhiteListValues.Length} 個 ID。");
+    }
+    catch (Exception ex)
+    {
+      Logger.LogError($"[WhiteList] 讀取檔案失敗: {ex.Message}");
+    }
   }
 
   public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
