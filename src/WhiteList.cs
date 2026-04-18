@@ -38,8 +38,11 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
     AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
     
-    // 註冊切換開關指令
+    // 1. 註冊設定檔定義的切換指令
     AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
+    
+    // 2. 新增：註冊 css_whitelist，支援聊天欄位 !whitelist 與伺服器控制台指令
+    AddCommand("css_whitelist", "Toggle whitelist via chat or console", ToggleWhitelistUniversal);
 
     CheckVersion();
 
@@ -55,28 +58,51 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     }
   }
 
-  // 處理白名單開關切換的方法
-  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
-  public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
+  // 萬用切換邏輯：支援玩家與控制台
+  [CommandHelper(whoCanExecute: CommandUsage.ALL)]
+  public void ToggleWhitelistUniversal(CCSPlayerController? player, CommandInfo command)
   {
-    if (player == null) return;
-
-    // 檢查執行者是否有權限 (預設為 @css/root)
-    if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+    // 如果是玩家執行的，檢查權限
+    if (player != null && !AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
     {
       command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
       return;
     }
 
-    // 執行切換
-    Config.Enabled = !Config.Enabled;
+    string setterName = (player == null) ? "控制台" : player.PlayerName;
+    ExecuteToggle(setterName);
+  }
 
-    // 設定顯示顏色與文字
+  // 原本的 Toggle 指令邏輯 (保留給設定檔指定的指令使用)
+  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+  public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
+  {
+    if (player == null) return;
+    if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+    {
+        command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
+        return;
+    }
+    ExecuteToggle(player.PlayerName);
+  }
+
+  // 核心執行邏輯：包含自動重新載入檔案
+  private void ExecuteToggle(string setterName)
+  {
+    Config.Enabled = !Config.Enabled;
+    
+    // 關鍵修正：當白名單變更為「開啟」時，重新讀取 whitelist.txt 以套用新 ID
+    if (Config.Enabled && !Config.UseDatabase)
+    {
+        CheckFile();
+        Logger.LogInformation("[WhiteList] 偵測到白名單開啟，已自動重新載入 whitelist.txt");
+    }
+
     string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
     
     // 全服廣播通知
-    Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{player.PlayerName}\x01 將白名單設定：{status}");
-    Logger.LogInformation($"Admin {player.PlayerName} toggled Whitelist to: {Config.Enabled}");
+    Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{setterName}\x01 將白名單設定：{status}");
+    Logger.LogInformation($"Admin {setterName} toggled Whitelist to: {Config.Enabled}");
   }
 
   public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
