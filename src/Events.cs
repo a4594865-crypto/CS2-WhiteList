@@ -21,7 +21,7 @@ public partial class WhiteList
 
         if (AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission))
         {
-            Logger.LogInformation($"[WhiteList] 管理員 {name} 立即驗證成功。");
+            Logger.LogInformation($"[WhiteList] 管理員 {name} 立即驗證成功，准許連線。");
             return;
         }
 
@@ -43,11 +43,15 @@ public partial class WhiteList
                 {
                     if (player == null || !player.IsValid) return;
 
-                    if (AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission)) return;
+                    if (AdminManager.PlayerHasPermissions(player, Config.Commands.ImmunityPermission))
+                    {
+                        Logger.LogInformation($"[WhiteList] 攔截誤踢：管理員 {name} 的權限已從 admins.json 載入。");
+                        return;
+                    }
 
                     if (userId.HasValue)
                     {
-                        Logger.LogWarning($"[WhiteList] 玩家 {name} 驗證失敗，執行踢除。");
+                        Logger.LogWarning($"[WhiteList] 玩家 {name} 驗證失敗且非管理員，執行踢除。");
                         KickPlayer(userId.Value, name, steamId64);
                     }
                 });
