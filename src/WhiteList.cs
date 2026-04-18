@@ -6,7 +6,6 @@ using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Cvars;
 using Microsoft.Extensions.Logging;
 using static CounterStrikeSharp.API.Core.Listeners;
-using System.Linq; // 必須引用此項來解決換行過濾問題
 
 namespace WhiteList;
 
@@ -34,9 +33,18 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
 
     RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
+    // --- 註冊指令區塊 ---
+    
+    // 1. 保留原本從 config.json 讀取的自訂指令 (例如 !whitelist)
+    AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist (Custom)", ToggleWhitelist);
+
+    // 2. 額外新增一個專門給伺服器後台使用的固定指令
+    AddCommand("css_whitelist", "Toggle Whitelist (Global/Console)", ToggleWhitelist);
+
+    // -------------------
+
     AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
     AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
-    AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
 
     CheckVersion();
 
@@ -47,47 +55,37 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     }
     else
     {
-      // 調用我們修正後的讀取方法
-      CustomCheckFile();
+      CheckFile();
     }
   }
 
-  // 核心修正：解決手動編輯 whitelist.txt 產生的換行符號 (\r) 問題
-  private void CustomCheckFile()
-  {
-    string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
-
-    if (!File.Exists(filePath))
-    {
-      File.Create(filePath).Close();
-      return;
-    }
-
-    // 使用 .Select(x => x.Trim()) 徹底洗掉 Windows 換行符號 \r
-    WhiteListValues = File.ReadAllLines(filePath)
-        .Select(x => x.Trim()) 
-        .Where(x => !string.IsNullOrWhiteSpace(x)) 
-        .ToArray();
-
-    Logger.LogInformation($"[WhiteList] 已成功載入 {WhiteListValues.Length} 個 ID。已自動修正換行格式。");
-  }
-
-  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+  // 修改：將 whoCanExecute 改為 CLIENT_AND_SERVER，讓黑視窗也能用
+  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
   public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
   {
-    if (player == null) return;
-
-    if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+    // 如果是玩家執行 (player 不為 null)，則檢查權限
+    // 如果是伺服器控制台執行 (player 為 null)，則直接通過
+    if (player != null && !AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
     {
       command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
       return;
     }
 
+    // 執行切換邏輯
     Config.Enabled = !Config.Enabled;
-    string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
+
+    // 設定顯示顏色與文字
+    string statusText = Config.Enabled ? "開啟" : "關閉";
+    string colorStatus = Config.Enabled ? "\x06開啟" : "\x02關閉";
     
-    Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{player.PlayerName}\x01 將白名單設定：{status}");
-    Logger.LogInformation($"Admin {player.PlayerName} toggled Whitelist to: {Config.Enabled}");
+    // 回應執行指令的人 (會顯示在控制台或玩家聊天室)
+    command.ReplyToCommand($" [WhiteList] 功能已切換為：{statusText}");
+
+    // 全服廣播通知
+    string executor = player == null ? "伺服器控制台" : player.PlayerName;
+    Server.PrintToChatAll($" \x01[\x0B 管理員 \x01] \x03{executor}\x01 將白名單設定：{colorStatus}");
+    
+    Logger.LogInformation($"{executor} toggled Whitelist to: {Config.Enabled}");
   }
 
   public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
