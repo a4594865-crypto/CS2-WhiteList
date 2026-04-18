@@ -33,15 +33,15 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
 
     RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
-    // 註冊指令
     AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
     AddCommand($"css_{Config.Commands.Remove}", "Remove from list", Remove);
     
-    // 1. 遊戲內切換指令 (例如 css_toggle)
+    // 這裡保留您原本設定檔定義的切換指令
     AddCommand($"css_{Config.Commands.Toggle}", "Toggle Whitelist", ToggleWhitelist);
     
-    // 2. 新增：專供控制台使用的指令 css_whitelist
-    AddCommand("css_whitelist", "Console command to toggle whitelist", ToggleWhitelistConsole);
+    // 新增：明確註冊 css_whitelist，這樣玩家就能在聊天欄用 !whitelist
+    // CommandUsage.ALL 代表玩家(CLIENT)與伺服器控制台(SERVER)都能用
+    AddCommand("css_whitelist", "Toggle whitelist via chat or console", ToggleWhitelistUniversal);
 
     CheckVersion();
 
@@ -56,40 +56,42 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
     }
   }
 
-  // 遊戲內切換邏輯
-  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
-  public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
+  // 萬用切換邏輯：支援玩家與控制台
+  [CommandHelper(whoCanExecute: CommandUsage.ALL)]
+  public void ToggleWhitelistUniversal(CCSPlayerController? player, CommandInfo command)
   {
-    if (player == null) return;
-
-    if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+    // 如果是玩家執行的，檢查權限
+    if (player != null && !AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
     {
       command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
       return;
     }
 
-    ExecuteToggle("管理員 " + player.PlayerName);
+    string setterName = (player == null) ? "控制台" : player.PlayerName;
+    ExecuteToggle(setterName);
   }
 
-  // 控制台切換邏輯
-  [CommandHelper(whoCanExecute: CommandUsage.SERVER_ONLY)]
-  public void ToggleWhitelistConsole(CCSPlayerController? player, CommandInfo command)
+  // 您原本的 Toggle 指令邏輯 (保留給設定檔指定的指令使用)
+  [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+  public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
   {
-    ExecuteToggle("控制台");
+    if (player == null) return;
+    if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+    {
+        command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
+        return;
+    }
+    ExecuteToggle(player.PlayerName);
   }
 
-  // 統一的切換執行邏輯
-  private void ExecuteToggle(string setterName)
+  private void ExecuteToggle(string name)
   {
     Config.Enabled = !Config.Enabled;
-    string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
-    string consoleStatus = Config.Enabled ? "開啟" : "關閉";
+    string colorStatus = Config.Enabled ? "\x06開啟" : "\x02關閉";
+    string plainStatus = Config.Enabled ? "開啟" : "關閉";
     
-    // 遊戲內通知
-    Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{setterName}\x01 將白名單設定：{status}");
-    
-    // 控制台通知
-    Logger.LogInformation($"[WhiteList] {setterName} 已將白名單設定為: {consoleStatus}");
+    Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{name}\x01 將白名單設定：{colorStatus}");
+    Logger.LogInformation($"[WhiteList] {name} toggled whitelist to: {plainStatus}");
   }
 
   public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
