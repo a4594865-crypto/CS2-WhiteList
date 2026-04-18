@@ -31,7 +31,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
             Convar_useAsBlacklist.ValueChanged += (_, value) => { Config.UseAsBlacklist = value; };
         }
 
-        // 註冊監聽器 (實作邏輯在 Events.cs)
+        // 註冊監聽器，實作邏輯位於 Events.cs
         RegisterListener<OnClientAuthorized>(OnClientAuthorized);
 
         AddCommand($"css_{Config.Commands.Add}", "Add to list", Add);
@@ -51,7 +51,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         }
     }
 
-    // 解決多行 ID 失效的核心：清除隱形字元
+    // 核心修正：解決多行 ID 讀取失敗
     public void CheckFile()
     {
         string filePath = Path.Combine(ModuleDirectory, "whitelist.txt");
@@ -64,8 +64,7 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
 
         try
         {
-            // ReadAllLines 會讀取每一行
-            // .Select(line => line.Trim()) 會刪除 ID 後面的 \r 換行符號
+            [cite_start]// 使用 Select(line => line.Trim()) 移除 \r 換行符號 
             WhiteListValues = File.ReadAllLines(filePath)
                 .Select(line => line.Trim())
                 .Where(line => !string.IsNullOrWhiteSpace(line))
@@ -75,4 +74,25 @@ public partial class WhiteList : BasePlugin, IPluginConfig<Config>
         }
         catch (Exception ex)
         {
-            Logger.LogError($"[WhiteList] 讀取檔案失敗: {ex.Message}");
+            Logger.LogError($"[WhiteList] 讀取失敗: {ex.Message}");
+        }
+    }
+
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    public void ToggleWhitelist(CCSPlayerController? player, CommandInfo command)
+    {
+        if (player == null) return;
+        if (!AdminManager.PlayerHasPermissions(player, Config.Commands.TogglePermission))
+        {
+            command.ReplyToCommand($"{Localizer["Prefix"]} {Localizer["MissingCommandPermission"]}");
+            return;
+        }
+
+        Config.Enabled = !Config.Enabled;
+        string status = Config.Enabled ? "\x06開啟" : "\x02關閉";
+        Server.PrintToChatAll($"\x01[\x0B 管理員 \x01]  \x03{player.PlayerName}\x01 將白名單設定：{status}");
+    }
+
+    public FakeConVar<bool> Convar_isPluginEnabled = new("plugin_whitelist_enabled", "Enable WhiteList", true);
+    public FakeConVar<bool> Convar_useAsBlacklist = new("plugin_whitelist_useasblacklist", "Use as blacklist", false);
+}
