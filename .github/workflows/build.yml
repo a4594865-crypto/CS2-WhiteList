@@ -21,13 +21,15 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0'
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
 
       - name: Get WhiteList Version
         id: WHITELIST_VERSION
         run: |
             WHITELIST_VERSION=$(grep -oP 'ModuleVersion\s*=>\s*"\K[^"]*' src/WhiteList.cs)
             echo "WHITELIST_VERSION=$WHITELIST_VERSION" >> $GITHUB_ENV
+            
       - name: Build and Release Artifacts
         run: |
           echo "Creating WhiteList base package with version: $WHITELIST_VERSION"
